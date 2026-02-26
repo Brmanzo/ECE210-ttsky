@@ -1,6 +1,7 @@
 import os
 import shutil
 import sys
+import git
 import queue
 import math
 import numpy as np
@@ -10,16 +11,22 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-_PWD = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, _PWD)
+_REPO_ROOT = git.Repo(search_parent_directories=True).working_tree_dir
+assert _REPO_ROOT is not None, "REPO_ROOT path must not be None"
+assert (os.path.exists(_REPO_ROOT)), "REPO_ROOT path must exist"
+_UTIL_PATH = os.path.join(_REPO_ROOT, "sim", "util")
+assert os.path.exists(_UTIL_PATH), f"Utilities path does not exist: {_UTIL_PATH}"
+sys.path.insert(0, _UTIL_PATH)
 from utilities import runner, lint, assert_resolvable, clock_start_sequence, reset_sequence, delay_cycles
 tbpath = os.path.dirname(os.path.realpath(__file__))
 
 import pytest
 
 import cocotb
-from cocotb.triggers import RisingEdge, FallingEdge, with_timeout, Timer
+
+from cocotb.triggers import RisingEdge, FallingEdge, with_timeout
 from cocotb.result import SimTimeoutError
+
 from cocotb_test.simulator import run
    
 import random
@@ -50,7 +57,7 @@ def sign_extend(val: int, bits: int) -> int:
     sign = 1 << (bits - 1)
     return (val ^ sign) - sign
 
-def gen_weights(WW: int, OC: int, IC: int, seed: Optional[int]):
+def gen_weights(WW: int, OC: int, IC: int, seed: int | None = None):
     rng = random.Random(seed)
     if WW < 2:
         raise ValueError("Weight width must be at least 2 to include negative values in test kernels.")
@@ -83,7 +90,7 @@ def gen_weights(WW: int, OC: int, IC: int, seed: Optional[int]):
 
     return packed_weights
 
-def gen_biases(BW: int, OC: int, seed: Optional[int] = None):
+def gen_biases(BW: int, OC: int, seed: int | None = None):
     rng = random.Random(seed)
 
     max_val = (1 << (BW - 1)) - 1
@@ -192,19 +199,8 @@ def unpack_data_i(packed, width_in, IC):
     mask = (1 << width_in) - 1
     return [ (packed >> (ic * width_in)) & mask for ic in range(IC) ]
 
-def get_env_int(name: str, default: Optional[int] = None) -> int:
-    v = os.getenv(name)
-    if v is None:
-        if default is None:
-            raise RuntimeError(
-                f"Missing env var {name}. In Makefile mode you must set it, e.g. "
-                f"{name}=123 make, or generate injected_*.vh before compile."
-            )
-        return default
-    return int(v, 0)  # supports "0x..." too
-
 @pytest.mark.parametrize("test_name", tests)
-@pytest.mark.parametrize("simulator", ["icarus"])
+@pytest.mark.parametrize("simulator", ["verilator", "icarus"])
 @pytest.mark.parametrize(
     "WidthIn, WeightWidth, InChannels, WidthOut, OutChannels, Weights, BiasWidth, Biases",
     [
@@ -252,11 +248,7 @@ def test_width(test_name, simulator, WidthIn, WeightWidth, InChannels, WidthOut,
     os.environ["INJECTED_WEIGHTS_INT"] = str(Weights)
     os.environ["INJECTED_BIASES_INT"]  = str(Biases)
 
-    src = [
-        os.path.join(tbpath, "..", "src", "fc_layer.sv"),
-        os.path.join(tbpath, "..", "src", "neuron.sv"),
-        os.path.join(tbpath, "tb.sv"),
-    ]
+    wrapper_path = os.path.join(tbpath, "tb_fc_layer.sv")
 
     runner(
         simulator=simulator,
@@ -265,19 +257,20 @@ def test_width(test_name, simulator, WidthIn, WeightWidth, InChannels, WidthOut,
         params=parameters,
         testname=test_name,
         work_dir=custom_work_dir,
-        includes=[custom_work_dir],
-        toplevel_override="tb",
-        verilog_sources=src
+        includes=[custom_work_dir],        # so injected_*.vh can be `included
+        toplevel_override="tb_fc_layer",
+        extra_sources=[wrapper_path],
     )
+
 @pytest.mark.parametrize("test_name", tests)
-@pytest.mark.parametrize("simulator", ["icarus"])
+@pytest.mark.parametrize("simulator", ["verilator", "icarus"])
 @pytest.mark.parametrize(
     "WidthIn, WeightWidth, InChannels, WidthOut, OutChannels, Weights, BiasWidth, Biases",
     [
-        (1, 2,  1, output_width(1, 2, 1),    1, gen_weights(2,  1,  1, seed=1234), 2, gen_biases(2, 1)),
-        (2, 3,  2, output_width(2, 3, 2),    2, gen_weights(3,  2,  2, seed=1234), 3, gen_biases(3, 2)),
-        (4, 5,  4, output_width(4, 5, 4),    4, gen_weights(5,  4,  4, seed=1234), 5, gen_biases(5, 4)),
-        (8, 8, 32, output_width(8, 8, 32),  32, gen_weights(8, 32, 32, seed=1234), 8, gen_biases(8, 32)),
+        (1, 2,  1, output_width(1, 2, 1),    1, gen_weights(2, 1, 1, seed=1234), 2, gen_biases(2, 1)),
+        (2, 3,  2, output_width(2, 3, 2),    2, gen_weights(3, 1, 1, seed=1234), 3, gen_biases(3, 2)),
+        (4, 5,  4, output_width(4, 5, 4),    4, gen_weights(5, 1, 1, seed=1234), 5, gen_biases(5, 4)),
+        (8, 8, 32, output_width(8, 8, 32),  32, gen_weights(8, 1, 1, seed=1234), 8, gen_biases(8, 32)),
     ],
 )
 def test_channels(test_name, simulator, WidthIn, WeightWidth, InChannels, WidthOut, OutChannels, Weights, BiasWidth, Biases):
@@ -318,11 +311,7 @@ def test_channels(test_name, simulator, WidthIn, WeightWidth, InChannels, WidthO
     os.environ["INJECTED_WEIGHTS_INT"] = str(Weights)
     os.environ["INJECTED_BIASES_INT"]  = str(Biases)
 
-    src = [
-        os.path.join(tbpath, "..", "src", "fc_layer.sv"),
-        os.path.join(tbpath, "..", "src", "neuron.sv"),
-        os.path.join(tbpath, "tb.sv"),
-    ]
+    wrapper_path = os.path.join(tbpath, "tb_fc_layer.sv")
 
     runner(
         simulator=simulator,
@@ -331,11 +320,27 @@ def test_channels(test_name, simulator, WidthIn, WeightWidth, InChannels, WidthO
         params=parameters,
         testname=test_name,
         work_dir=custom_work_dir,
-        includes=[custom_work_dir],
-        toplevel_override="tb",
-        verilog_sources=src
+        includes=[custom_work_dir],        # so injected_*.vh can be `included
+        toplevel_override="tb_fc_layer",
+        extra_sources=[wrapper_path],
     )
-    
+
+@pytest.mark.parametrize("simulator", ["verilator"])
+@pytest.mark.parametrize("WidthIn, WeightWidth, InChannels, WidthOut, OutChannels, BiasWidth", 
+                         [(1, 2, 1, output_width(1, 2, 1), 1, 2)])
+def test_lint(simulator, WidthIn, WeightWidth, InChannels, WidthOut, OutChannels, BiasWidth):
+    parameters = dict(locals())
+    del parameters['simulator']
+    lint(simulator, timescale, tbpath, parameters)
+
+@pytest.mark.parametrize("simulator", ["verilator"])
+@pytest.mark.parametrize("WidthIn, WeightWidth, InChannels, WidthOut, OutChannels, BiasWidth", 
+                         [(1, 2, 1, output_width(1, 2, 1), 1, 2)])
+def test_style(simulator, WidthIn, WeightWidth, InChannels, WidthOut, OutChannels, BiasWidth):
+    parameters = dict(locals())
+    del parameters['simulator']
+    lint(simulator, timescale, tbpath, parameters, compile_args=["--lint-only", "-Wwarn-style", "-Wno-lint"])
+
 class FCLayerModel():
     def __init__(self, dut, weights: List[List[int]], biases: List[int], torch_ref=None):
         self._dut = dut
@@ -419,7 +424,7 @@ class FCLayerModel():
             got = sign_extend(raw, w)
             exp = int(expected[ch])
 
-            cocotb.log.info(f"Output #{self._deqs} ch{ch}: expected {exp}, got {got} (raw=0x{raw:x})")
+            print(f"Output #{self._deqs} ch{ch}: expected {exp}, got {got} (raw=0x{raw:x})")
 
             assert got == exp, (
                 f"Mismatch at output #{self._deqs} ch{ch}: expected {exp}, got {got} (raw=0x{raw:x})"
@@ -713,16 +718,16 @@ class ModelRunner():
             self._coro_run_out = None
     
 
-@cocotb.test()
+@cocotb.test
 async def reset_test(dut):
     """Test for Initialization"""
-    cocotb.log.info("DUT objects:", dir(dut))
+    print("DUT objects:", dir(dut))
     clk_i = dut.clk_i
     rst_i = dut.rst_i
     await clock_start_sequence(clk_i)
     await reset_sequence(clk_i, rst_i, 10)
 
-@cocotb.test()
+@cocotb.test
 async def single_test(dut):
     """Drive exactly one input vector (one handshake) and expect exactly one output vector."""
 
@@ -737,10 +742,8 @@ async def single_test(dut):
     rate  = 1.0
 
     # ---- Unpack injected weights (and biases) ----
-    W_packed = get_env_int("INJECTED_WEIGHTS_INT", default=0)
-    B_packed = get_env_int("INJECTED_BIASES_INT", default=0)
-    weights_2d = unpack_weights(W_packed, WW, OC, IC)
-    biases_1d = unpack_biases(B_packed, BW, OC)
+    weights_2d = unpack_weights(int(os.environ["INJECTED_WEIGHTS_INT"]), WW, OC, IC)
+    biases_1d = unpack_biases(int(os.environ["INJECTED_BIASES_INT"]), BW, OC)
     
     # Instantiate PyTorch reference model
     fc = fc_reference(weights_2d, biases_1d, IC, OC)
@@ -800,10 +803,8 @@ async def rate_tests(dut, in_rate: float, out_rate: float, N_vec: int = 200):
     N_out = int(N_vec)
 
     # --- Unpack injected weights ---
-    W_packed = get_env_int("INJECTED_WEIGHTS_INT", default=0)
-    B_packed = get_env_int("INJECTED_BIASES_INT", default=0)
-    weights_2d = unpack_weights(W_packed, WW, OC, IC)
-    biases_1d  = unpack_biases(B_packed, BW, OC)
+    weights_2d = unpack_weights(int(os.environ["INJECTED_WEIGHTS_INT"]), WW, OC, IC)
+    biases_1d  = unpack_biases(int(os.environ["INJECTED_BIASES_INT"]), BW, OC)
 
     # Instantiate PyTorch reference model
     fc = fc_reference(weights_2d, biases_1d, IC, OC)
@@ -846,22 +847,18 @@ async def rate_tests(dut, in_rate: float, out_rate: float, N_vec: int = 200):
             f"in {timeout_ns} ns (in_rate={in_rate}, out_rate={out_rate})."
         )
 
-@cocotb.test()
+@cocotb.test
 async def out_fuzz_test(dut):
     await rate_tests(dut, in_rate=1.0, out_rate=0.5, N_vec=100)
 
-@cocotb.test()
+@cocotb.test
 async def in_fuzz_test(dut):
     await rate_tests(dut, in_rate=0.5, out_rate=1.0, N_vec=100)
 
-@cocotb.test()
+@cocotb.test
 async def inout_fuzz_test(dut):
     await rate_tests(dut, in_rate=0.5, out_rate=0.5, N_vec=100)
 
-@cocotb.test()
+@cocotb.test
 async def full_bw_test(dut):
     await rate_tests(dut, in_rate=1.0, out_rate=1.0, N_vec=100)
-
-@cocotb.test()
-async def discovered(dut):
-    await Timer(1, "ns")
