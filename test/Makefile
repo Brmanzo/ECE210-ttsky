@@ -43,10 +43,14 @@ export SIM FST TOPLEVEL_LANG GATES SRC_DIR PROJECT_SOURCES SIM_BUILD VERILOG_SOU
 .PHONY: all
 all: pytest
 
+TEST_FILE ?= test.py
+
 .PHONY: pytest
 pytest:
 	@rm -f $(JUNIT)
 	@touch $(JUNIT)
+  @echo "TEST_FILE=$(TEST_FILE)"
+	@echo "PYTEST_ARGS=$(PYTEST_ARGS)"
 	$(PYTEST) $(PYTEST_ARGS) --junitxml=$(JUNIT) $(TEST_FILE) -rA $(if $(ARGS),-k "$(ARGS)",)
 
 .PHONY: clean
