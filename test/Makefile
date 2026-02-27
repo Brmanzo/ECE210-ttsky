@@ -49,7 +49,7 @@ TEST_FILE ?= test.py
 pytest:
 	@rm -f $(JUNIT)
 	@touch $(JUNIT)
-  @echo "TEST_FILE=$(TEST_FILE)"
+	@echo "TEST_FILE=$(TEST_FILE)"
 	@echo "PYTEST_ARGS=$(PYTEST_ARGS)"
 	$(PYTEST) $(PYTEST_ARGS) --junitxml=$(JUNIT) $(TEST_FILE) -rA $(if $(ARGS),-k "$(ARGS)",)
 
