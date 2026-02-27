@@ -13,7 +13,7 @@ PROJECT_SOURCES := tt_um_fc_layer.sv neuron.sv
 
 # junit output
 JUNIT ?= results.xml
-TEST_FILE ?= test.py
+JUNIT ?= $(PWD)/results.xml
 
 # Pytest config
 export COCOTB_LOG_LEVEL=INFO
@@ -45,6 +45,8 @@ all: pytest
 
 .PHONY: pytest
 pytest:
+	@rm -f $(JUNIT)
+	@touch $(JUNIT)
 	$(PYTEST) $(PYTEST_ARGS) --junitxml=$(JUNIT) $(TEST_FILE) -rA $(if $(ARGS),-k "$(ARGS)",)
 
 .PHONY: clean
