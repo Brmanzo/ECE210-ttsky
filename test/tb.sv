@@ -1,8 +1,7 @@
 `default_nettype none
 // tb.sv
 // Bradley Manzo, 2026
-  
-/* verilator lint_off PINCONNECTEMPTY */
+
 `timescale 1ns / 1ps
 module tb #(
    parameter int unsigned WidthIn      = 1
@@ -24,11 +23,12 @@ module tb #(
 
   ,output logic signed [OutChannels-1:0][WidthOut-1:0] data_o
 );
-
+// Load weights and biases from generated header files
+// to avoid python cocotb data type constraints (32 bit limit)
 `include "injected_weights.vh"
 `include "injected_biases.vh"
 
-fc_layer #(
+tt_um_fc_layer #(
      .WidthIn     (WidthIn)
     ,.WidthOut    (WidthOut)
     ,.WeightWidth (WeightWidth)

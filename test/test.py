@@ -253,7 +253,7 @@ def test_width(test_name, simulator, WidthIn, WeightWidth, InChannels, WidthOut,
     os.environ["INJECTED_BIASES_INT"]  = str(Biases)
 
     src = [
-        os.path.join(tbpath, "..", "src", "fc_layer.sv"),
+        os.path.join(tbpath, "..", "src", "tt_um_fc_layer.sv"),
         os.path.join(tbpath, "..", "src", "neuron.sv"),
         os.path.join(tbpath, "tb.sv"),
     ]
@@ -319,7 +319,7 @@ def test_channels(test_name, simulator, WidthIn, WeightWidth, InChannels, WidthO
     os.environ["INJECTED_BIASES_INT"]  = str(Biases)
 
     src = [
-        os.path.join(tbpath, "..", "src", "fc_layer.sv"),
+        os.path.join(tbpath, "..", "src", "tt_um_fc_layer.sv"),
         os.path.join(tbpath, "..", "src", "neuron.sv"),
         os.path.join(tbpath, "tb.sv"),
     ]

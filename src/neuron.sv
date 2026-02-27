@@ -17,7 +17,7 @@ module neuron#(
   logic signed [WidthOut-1:0]    acc_d;
   logic signed [WeightWidth-1:0] weight;
 
-  always_comb begin : neuron_compute
+  always_comb begin
     acc_d = '0;
     for (int ch = 0; ch < InChannels; ch++) begin
       weight = Weights[ch*WeightWidth +: WeightWidth];

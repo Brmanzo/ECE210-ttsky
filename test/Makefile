@@ -9,7 +9,7 @@ TOPLEVEL_LANG ?= verilog
 GATES ?= no
 
 SRC_DIR := $(PWD)/../src
-PROJECT_SOURCES := fc_layer.sv neuron.sv
+PROJECT_SOURCES := tt_um_fc_layer.sv neuron.sv
 
 # junit output
 JUNIT ?= results.xml
