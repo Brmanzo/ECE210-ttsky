@@ -33,8 +33,38 @@ to a bias value.
 
 ## How to test
 
-I lobotomized the makefile and test.py to integrate my own custom pytest cocotb flow. Running "make -B" Should run icarus tests for my two parameterized categories test_width, and test_channels. These parameterized runs are then tested over varying rates of readyness. Infuzz where input is ready 50%, Outfuzz where output is ready 50%, Inoutfuzz where both are ready 50%, and fullbw where both are ready 100%.
+I lobotomized the makefile and test.py to integrate my own custom pytest cocotb flow. To setup the environment first run:
+
+```bash
+pip3 install -r test/requirements.txt
+```
+
+Then open the tests directory and run the cocotb pytest:
+
+```bash
+cd tests
+make -B
+```
+
+You can run specific tests by attaching a keyword:
+
+```bash
+make -b ARGS="reset" // Runs all reset tests
+make -b ARGS="width" // Runs all tests in width category
+make -b ARGS="32"    // Runs all tests with a parameter of 32
+```
+
+The Icarus simulator is leveraged to test two parameterized categories: width and channels.
+
+- reset test checks connectivity
+- single test checks single data input to output
+
+These parameterized runs are then tested over varying rates of readiness for 100 inputs.
+- in_fuzz where input is ready 50%
+- out_fuzz where output is ready 50%
+- inout_fuzz where both are ready 50%
+- full_bw where both are ready 100%.
 
 ## External hardware
 
-No physical testing yet, but will be implemented on an Icebreaker v1.1a FPGA for final project.
+No physical testing yet, but will be implemented on an Icebreaker v1.1a FPGA for final project. Github Actions respects my pytest workflow, but my ANN was not designed with GDS pincount in mind and will not pass the GDS action. This is accounted for in my final project where the result is put back onto a single pin via bit-packer and framing hardware.
